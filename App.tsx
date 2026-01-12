@@ -39,7 +39,7 @@ const App: React.FC = () => {
   const [isGeneratingBg, setIsGeneratingBg] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   
-  const gameLoopRef = useRef<number>(null);
+  const gameLoopRef = useRef<number | null>(null);
   const lastSpawnRef = useRef<number>(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const bgmRef = useRef<HTMLAudioElement | null>(null);
@@ -66,17 +66,9 @@ const App: React.FC = () => {
     };
   }, []);
 
-  useEffect(() => {
-    if (bgmRef.current) bgmRef.current.muted = isMuted;
-    if (popSfxRef.current) popSfxRef.current.muted = isMuted;
-    if (hitSfxRef.current) hitSfxRef.current.muted = isMuted;
-  }, [isMuted]);
-
-  // Standardized image generation logic following guidelines
   const generateBackground = async () => {
     setIsGeneratingBg(true);
     try {
-      // Use process.env.API_KEY directly and create instance right before the call
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
@@ -86,7 +78,6 @@ const App: React.FC = () => {
         config: { imageConfig: { aspectRatio: "9:16" } }
       });
 
-      // Find the image part in the response
       const part = response.candidates[0].content.parts.find(p => p.inlineData);
       if (part?.inlineData) {
         setGameState(prev => ({ ...prev, backgroundUrl: `data:image/png;base64,${part.inlineData.data}` }));
@@ -220,6 +211,7 @@ const App: React.FC = () => {
       setIsLoading(true);
       getGeminiFeedback(gameState.score, gameState.level).then(msg => { setGameState(s => ({ ...s, geminiMessage: msg })); setIsLoading(false); });
     }
+    return () => { if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current); };
   }, [gameState.status, gameLoop]);
 
   const Footer = () => (
@@ -233,7 +225,6 @@ const App: React.FC = () => {
 
   return (
     <div ref={containerRef} className="relative w-full h-screen overflow-hidden bg-[#050510] text-white touch-none" style={{ transform: shakeIntensity > 0 ? `translate(${(Math.random()-0.5)*shakeIntensity}px, ${(Math.random()-0.5)*shakeIntensity}px)` : 'none' }}>
-      {/* Background Layer with Fallback */}
       <div className="absolute inset-0 bg-gradient-to-b from-[#0a0a20] via-[#050510] to-[#000]">
         {gameState.backgroundUrl && (
           <div className="absolute inset-0 bg-cover bg-center animate-fade-in transition-opacity duration-1000 opacity-60" style={{ backgroundImage: `url(${gameState.backgroundUrl})` }} />
@@ -258,7 +249,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Bubbles, Particles & Texts */}
       <div className="relative w-full h-full z-10">
         {bubbles.map(b => (
           <div key={b.id} onPointerDown={() => handlePop(b.id)} className={`absolute rounded-full cursor-pointer transition-transform active:scale-125`} style={{ left: b.x, top: b.y, width: b.size, height: b.size, background: b.type === BubbleType.GOLD ? 'radial-gradient(circle at 30% 30%, #fff, #facc15 60%, #a16207)' : `radial-gradient(circle at 30% 30%, rgba(255,255,255,0.4), ${b.color} 70%)`, boxShadow: b.type === BubbleType.GOLD ? '0 0 25px rgba(250,204,21,0.5)' : 'inset 0 0 10px rgba(255,255,255,0.3)', border: b.type === BubbleType.ARMORED ? '3px solid rgba(255,255,255,0.5)' : '1px solid rgba(255,255,255,0.2)' }}>
@@ -267,12 +257,10 @@ const App: React.FC = () => {
             {b.type === BubbleType.HEART && <div className="absolute inset-0 flex items-center justify-center text-xl">❤️</div>}
           </div>
         ))}
-        {/* Fixed "pt" reference error below: changed pt.life to p.life */}
         {particles.map(p => <div key={p.id} className="absolute rounded-full pointer-events-none" style={{ left: p.x, top: p.y, width: 8*p.life, height: 8*p.life, background: p.color, opacity: p.life }} />)}
         {floatingTexts.map(t => <div key={t.id} className="absolute pointer-events-none font-black text-xl italic" style={{ left: t.x, top: t.y, color: t.color, opacity: t.life, transform: `translateY(${(1-t.life)*-40}px)` }}>{t.text}</div>)}
       </div>
 
-      {/* Screens */}
       {gameState.status === GameStatus.START && (
         <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-black/60 backdrop-blur-xl p-8 overflow-y-auto">
           <div className="my-auto flex flex-col items-center max-w-2xl w-full">
@@ -280,7 +268,6 @@ const App: React.FC = () => {
             <div className="bg-yellow-400 text-black px-6 py-1 rounded-full font-black tracking-widest text-sm mb-12 shadow-lg uppercase">
               {gameState.highScore > 0 ? `HIGH SCORE: ${gameState.highScore}` : 'READY TO POP?'}
             </div>
-            
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full mb-12">
               {[{t:'Standard', d:'1 Tap'}, {t:'Armored', d:'3 Taps'}, {t:'Speedy', d:'Fast'}, {t:'Heart', d:'+1 Life'}].map((x,i) => (
                 <div key={i} className="bg-white/5 border border-white/10 p-4 rounded-2xl text-center">
@@ -289,7 +276,6 @@ const App: React.FC = () => {
                 </div>
               ))}
             </div>
-
             <button onClick={startGame} className="px-16 py-6 bg-white text-black rounded-full font-black text-3xl hover:scale-105 active:scale-95 transition-all shadow-2xl hover:bg-blue-500 hover:text-white">JUGAR AHORA</button>
           </div>
           <Footer />
@@ -302,12 +288,10 @@ const App: React.FC = () => {
             <div className="text-red-500 font-black tracking-[0.4em] uppercase text-sm mb-4">Game Over</div>
             <div className="text-[10rem] font-black leading-none mb-2">{gameState.score}</div>
             <div className="text-slate-500 text-xs uppercase tracking-widest mb-10">Puntuación Final</div>
-            
             <div className="w-full max-w-sm bg-white/5 p-6 rounded-[2rem] border border-white/10 mb-10 text-center relative overflow-hidden">
               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-purple-500"></div>
               {isLoading ? <div className="animate-pulse py-4 font-bold text-blue-300">CALCULANDO TU GRANDEZA...</div> : <p className="text-xl font-bold italic">"{gameState.geminiMessage}"</p>}
             </div>
-
             <div className="flex flex-col gap-4 w-full max-w-xs">
               <button onClick={startGame} className="w-full py-5 bg-blue-600 rounded-2xl font-black text-xl hover:bg-blue-500 transition-all shadow-xl">REINTENTAR</button>
               <button onClick={() => setGameState(s => ({ ...s, status: GameStatus.START }))} className="py-2 text-slate-500 hover:text-white uppercase text-xs tracking-widest font-bold">Menú Principal</button>
