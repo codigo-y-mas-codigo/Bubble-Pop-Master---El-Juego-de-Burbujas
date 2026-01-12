@@ -21,13 +21,14 @@ const POP_SFX_URL = 'https://assets.mixkit.co/active_storage/sfx/2571/2571-previ
 const HIT_SFX_URL = 'https://assets.mixkit.co/active_storage/sfx/2572/2572-preview.mp3';
 
 const App: React.FC = () => {
-  const [gameState, setGameState] = useState<GameState & { backgroundUrl?: string }>({
+  const [gameState, setGameState] = useState<GameState & { backgroundUrl?: string, highScore: number }>({
     score: 0,
     lives: INITIAL_LIVES,
     level: 1,
     status: GameStatus.START,
     geminiMessage: '',
-    backgroundUrl: ''
+    backgroundUrl: '',
+    highScore: 0
   });
 
   const [bubbles, setBubbles] = useState<BubbleData[]>([]);
@@ -47,7 +48,13 @@ const App: React.FC = () => {
   const popSfxRef = useRef<HTMLAudioElement | null>(null);
   const hitSfxRef = useRef<HTMLAudioElement | null>(null);
 
+  // Cargar récord histórico al iniciar
   useEffect(() => {
+    const savedScore = localStorage.getItem('bubblePopHighScore');
+    if (savedScore) {
+      setGameState(prev => ({ ...prev, highScore: parseInt(savedScore) }));
+    }
+
     bgmRef.current = new Audio(BGM_URL);
     bgmRef.current.loop = true;
     bgmRef.current.volume = 0.3;
@@ -228,8 +235,6 @@ const App: React.FC = () => {
 
         const particleCount = bubble.type === BubbleType.GOLD ? 30 : bubble.type === BubbleType.ARMORED ? 20 : 15;
         createParticles(centerX, centerY, bubble.color, particleCount);
-        
-        // Visual effects for popping
         triggerShake(bubble.type === BubbleType.ARMORED ? 8 : bubble.type === BubbleType.GOLD ? 5 : 2);
         
         let bonusText = `+${bubble.points}`;
@@ -241,11 +246,12 @@ const App: React.FC = () => {
         setGameState(s => {
           let extraLives = 0;
           if (bubble.type === BubbleType.HEART) extraLives = 1;
+          const newScore = s.score + bubble.points;
           
           return { 
             ...s, 
-            score: s.score + bubble.points,
-            level: Math.floor((s.score + bubble.points) / 1200) + 1,
+            score: newScore,
+            level: Math.floor(newScore / 1200) + 1,
             lives: Math.min(MAX_LIVES, s.lives + extraLives)
           };
         });
@@ -256,7 +262,6 @@ const App: React.FC = () => {
           hitSfxRef.current.currentTime = 0;
           hitSfxRef.current.play().catch(() => {});
         }
-        // Hit effect
         createParticles(centerX, centerY, 'rgba(255,255,255,0.7)', 6);
         triggerShake(2);
         
@@ -297,7 +302,7 @@ const App: React.FC = () => {
           ...p,
           x: p.x + p.vx,
           y: p.y + p.vy,
-          vy: p.vy + 0.1, // Slight gravity
+          vy: p.vy + 0.1,
           life: p.life - 0.02
         }))
         .filter(p => p.life > 0)
@@ -321,6 +326,13 @@ const App: React.FC = () => {
       gameLoopRef.current = requestAnimationFrame(gameLoop);
     } else if (gameState.status === GameStatus.GAMEOVER) {
       if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
+      
+      // Actualizar récord
+      if (gameState.score > gameState.highScore) {
+        localStorage.setItem('bubblePopHighScore', gameState.score.toString());
+        setGameState(prev => ({ ...prev, highScore: gameState.score }));
+      }
+
       setIsLoading(true);
       getGeminiFeedback(gameState.score, gameState.level).then(msg => {
         setGameState(s => ({ ...s, geminiMessage: msg }));
@@ -330,7 +342,33 @@ const App: React.FC = () => {
     return () => {
       if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
     };
-  }, [gameState.status, gameLoop]);
+  }, [gameState.status, gameLoop, gameState.score, gameState.highScore]);
+
+  // Componente Footer Reutilizable
+  const Footer = () => (
+    <footer className="mt-auto py-6 w-full flex flex-col items-center gap-2 z-[70]">
+      <div className="flex items-center gap-4 text-slate-400 text-xs font-medium uppercase tracking-[0.2em]">
+        <a 
+          href="https://github.com/codigo-y-mas-codigo/Bubble-Pop-Master---El-Juego-de-Burbujas" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="hover:text-white transition-colors flex items-center gap-1.5 bg-white/5 px-3 py-1.5 rounded-full border border-white/10"
+        >
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+          Repositorio
+        </a>
+        <span className="opacity-30">•</span>
+        <a 
+          href="https://luisangelmacielp.vercel.app/" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="hover:text-blue-400 transition-colors flex items-center gap-1.5 bg-white/5 px-3 py-1.5 rounded-full border border-white/10"
+        >
+          Desarrollado por <span className="text-white font-bold">Luis Angel Maciel</span>
+        </a>
+      </div>
+    </footer>
+  );
 
   return (
     <div 
@@ -340,20 +378,22 @@ const App: React.FC = () => {
         transform: shakeIntensity > 0 ? `translate(${(Math.random() - 0.5) * shakeIntensity}px, ${(Math.random() - 0.5) * shakeIntensity}px)` : 'none'
       }}
     >
-      {/* Background */}
-      {gameState.backgroundUrl ? (
-        <div 
-          className="absolute inset-0 bg-cover bg-center transition-opacity duration-1000"
-          style={{ backgroundImage: `url(${gameState.backgroundUrl})` }}
-        >
-          <div className="absolute inset-0 bg-black/30 backdrop-blur-[1px]"></div>
-        </div>
-      ) : (
-        <div className="absolute inset-0 bg-slate-900 overflow-hidden">
-           <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/20 rounded-full blur-[120px] animate-pulse"></div>
-           <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-purple-600/20 rounded-full blur-[150px] animate-pulse delay-700"></div>
-        </div>
-      )}
+      {/* Background Layer */}
+      <div className="absolute inset-0 z-0">
+        {gameState.backgroundUrl ? (
+          <div 
+            className="absolute inset-0 bg-cover bg-center transition-opacity duration-1000"
+            style={{ backgroundImage: `url(${gameState.backgroundUrl})` }}
+          >
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px]"></div>
+          </div>
+        ) : (
+          <div className="absolute inset-0 bg-[#0a0a1a] overflow-hidden">
+             <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-[120px] animate-pulse"></div>
+             <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-purple-600/10 rounded-full blur-[150px] animate-pulse delay-700"></div>
+          </div>
+        )}
+      </div>
 
       {/* Control Sonido */}
       <button 
@@ -367,7 +407,7 @@ const App: React.FC = () => {
         )}
       </button>
 
-      {/* HUD */}
+      {/* HUD de Juego Activo */}
       {gameState.status === GameStatus.PLAYING && (
         <div className="absolute top-0 left-0 w-full p-6 flex justify-between items-start z-10 pointer-events-none">
           <div className="bg-white/10 backdrop-blur-xl px-6 py-3 rounded-2xl border border-white/20 shadow-2xl">
@@ -390,49 +430,44 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Bubbles */}
-      <div className="relative w-full h-full">
-        {bubbles.map(bubble => {
-          return (
-            <div
-              key={bubble.id}
-              onPointerDown={() => handlePop(bubble.id)}
-              className={`absolute rounded-full cursor-pointer group active:scale-110 transition-all duration-75 ${bubble.type === BubbleType.GOLD ? 'animate-pulse' : ''}`}
-              style={{
-                left: bubble.x,
-                top: bubble.y,
-                width: bubble.size,
-                height: bubble.size,
-                background: bubble.type === BubbleType.GOLD 
-                  ? `radial-gradient(circle at 30% 30%, #fff 0%, #facc15 60%, #a16207 100%)`
-                  : `radial-gradient(circle at 30% 30%, rgba(255,255,255,0.4) 0%, ${bubble.color} 70%, rgba(0,0,0,0.2) 100%)`,
-                boxShadow: bubble.type === BubbleType.GOLD 
-                  ? '0 0 30px rgba(250, 204, 21, 0.6)' 
-                  : `0 0 20px rgba(255,255,255,0.1), inset 0 0 15px rgba(255,255,255,0.2)`,
-                border: bubble.type === BubbleType.ARMORED 
-                  ? `${4 * (bubble.health / bubble.maxHealth)}px solid rgba(255,255,255,0.6)` 
-                  : '1px solid rgba(255,255,255,0.3)',
-                filter: bubble.type === BubbleType.SPEEDY ? 'skewX(-10deg)' : 'none'
-              }}
-            >
-              <div className="absolute top-[15%] left-[15%] w-[25%] h-[25%] bg-white/40 rounded-full blur-[1px]"></div>
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-60">
-                {bubble.type === BubbleType.HEART && <span className="text-2xl drop-shadow-lg">❤️</span>}
-                {bubble.type === BubbleType.ARMORED && (
-                  <div className="flex gap-0.5">
-                    {Array.from({ length: bubble.maxHealth }).map((_, i) => (
-                      <div key={i} className={`w-2 h-2 rounded-full ${i < bubble.health ? 'bg-white shadow-sm' : 'bg-black/40'}`} />
-                    ))}
-                  </div>
-                )}
-                {bubble.type === BubbleType.SPEEDY && <span className="text-xl italic font-black text-white/40">>></span>}
-                {bubble.type === BubbleType.GOLD && <span className="text-2xl animate-bounce">✨</span>}
-              </div>
+      {/* Entidades del Juego */}
+      <div className="relative w-full h-full z-10">
+        {bubbles.map(bubble => (
+          <div
+            key={bubble.id}
+            onPointerDown={() => handlePop(bubble.id)}
+            className={`absolute rounded-full cursor-pointer group active:scale-110 transition-all duration-75 ${bubble.type === BubbleType.GOLD ? 'animate-pulse' : ''}`}
+            style={{
+              left: bubble.x,
+              top: bubble.y,
+              width: bubble.size,
+              height: bubble.size,
+              background: bubble.type === BubbleType.GOLD 
+                ? `radial-gradient(circle at 30% 30%, #fff 0%, #facc15 60%, #a16207 100%)`
+                : `radial-gradient(circle at 30% 30%, rgba(255,255,255,0.4) 0%, ${bubble.color} 70%, rgba(0,0,0,0.2) 100%)`,
+              boxShadow: bubble.type === BubbleType.GOLD 
+                ? '0 0 30px rgba(250, 204, 21, 0.6)' 
+                : `0 0 20px rgba(255,255,255,0.1), inset 0 0 15px rgba(255,255,255,0.2)`,
+              border: bubble.type === BubbleType.ARMORED 
+                ? `${4 * (bubble.health / bubble.maxHealth)}px solid rgba(255,255,255,0.6)` 
+                : '1px solid rgba(255,255,255,0.3)',
+            }}
+          >
+            <div className="absolute top-[15%] left-[15%] w-[25%] h-[25%] bg-white/40 rounded-full blur-[1px]"></div>
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-60">
+              {bubble.type === BubbleType.HEART && <span className="text-2xl drop-shadow-lg">❤️</span>}
+              {bubble.type === BubbleType.ARMORED && (
+                <div className="flex gap-0.5">
+                  {Array.from({ length: bubble.maxHealth }).map((_, i) => (
+                    <div key={i} className={`w-2 h-2 rounded-full ${i < bubble.health ? 'bg-white shadow-sm' : 'bg-black/40'}`} />
+                  ))}
+                </div>
+              )}
+              {bubble.type === BubbleType.GOLD && <span className="text-2xl animate-bounce">✨</span>}
             </div>
-          );
-        })}
+          </div>
+        ))}
 
-        {/* Partículas */}
         {particles.map(p => (
           <div
             key={p.id}
@@ -444,13 +479,11 @@ const App: React.FC = () => {
               height: 10 * p.life,
               background: p.color,
               opacity: p.life,
-              boxShadow: `0 0 ${15 * p.life}px ${p.color}`,
               filter: 'blur(1px)'
             }}
           />
         ))}
 
-        {/* Floating Text */}
         {floatingTexts.map(t => (
           <div
             key={t.id}
@@ -461,7 +494,6 @@ const App: React.FC = () => {
               color: t.color,
               opacity: t.life,
               transform: `scale(${1 + (1 - t.life) * 0.5}) translateY(${(1 - t.life) * -20}px)`,
-              whiteSpace: 'nowrap'
             }}
           >
             {t.text}
@@ -469,90 +501,97 @@ const App: React.FC = () => {
         ))}
       </div>
 
-      {/* Overlays */}
-      {(gameState.status === GameStatus.START || isGeneratingBg) && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/70 backdrop-blur-2xl z-50 p-8 text-center">
+      {/* Pantalla de Inicio / Landing Page */}
+      {gameState.status === GameStatus.START && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-between p-6 bg-slate-950/40 backdrop-blur-lg overflow-y-auto">
           {isGeneratingBg ? (
-            <div className="flex flex-col items-center gap-6">
-              <div className="relative w-24 h-24">
-                <div className="absolute inset-0 border-4 border-blue-500/20 rounded-full"></div>
-                <div className="absolute inset-0 border-4 border-t-blue-500 rounded-full animate-spin"></div>
-              </div>
-              <p className="text-xl font-bold text-blue-300 animate-pulse tracking-widest uppercase">Generando Escenario...</p>
+            <div className="m-auto text-center">
+              <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-6"></div>
+              <p className="text-blue-300 font-bold tracking-widest animate-pulse">CREANDO MUNDO SUBMARINO...</p>
             </div>
           ) : (
             <>
-              <div className="relative mb-8">
-                <h1 className="text-7xl font-black italic tracking-tighter bg-gradient-to-b from-white to-blue-400 bg-clip-text text-transparent drop-shadow-[0_10px_30px_rgba(59,130,246,0.5)]">
-                  BUBBLE<br/>MASTER
-                </h1>
-                <div className="absolute -top-4 -right-4 bg-yellow-400 text-black px-3 py-1 rounded-lg text-xs font-black rotate-12 shadow-xl">EXTRA VISUALS</div>
+              <div className="w-full max-w-4xl flex flex-col items-center mt-auto mb-auto py-12">
+                <div className="text-center mb-12">
+                  <h1 className="text-7xl md:text-9xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-blue-500 drop-shadow-[0_10px_40px_rgba(59,130,246,0.6)]">
+                    BUBBLE<br/>MASTER
+                  </h1>
+                  <div className="inline-block mt-4 bg-yellow-400 text-black px-4 py-1 rounded-full text-sm font-black tracking-widest shadow-xl">
+                    {gameState.highScore > 0 ? `HIGH SCORE: ${gameState.highScore}` : 'NUEVO JUEGO'}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full mb-12">
+                  {[
+                    { type: 'Standard', desc: '1 toque, 100 pts', color: 'blue-400' },
+                    { type: 'Armored', desc: '3 toques, 400 pts', color: 'amber-400' },
+                    { type: 'Speedy', desc: 'Rápida, 250 pts', color: 'sky-400' },
+                    { type: 'Heart', desc: 'Extra Vida', color: 'rose-400' }
+                  ].map((item, i) => (
+                    <div key={i} className="bg-white/5 border border-white/10 p-4 rounded-3xl backdrop-blur-md hover:bg-white/10 transition-colors text-center">
+                      <p className={`text-${item.color} text-xs font-black uppercase mb-1`}>{item.type}</p>
+                      <p className="text-slate-400 text-[10px] leading-tight">{item.desc}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <button 
+                  onClick={startGame}
+                  className="relative px-20 py-6 bg-white text-black rounded-full font-black text-2xl md:text-3xl hover:bg-blue-500 hover:text-white transition-all hover:scale-105 active:scale-95 shadow-[0_20px_60px_rgba(59,130,246,0.4)]"
+                >
+                  EXPLOTAR BURBUJAS
+                </button>
+                
+                <p className="mt-8 text-slate-500 text-xs font-medium uppercase tracking-[0.3em]">Toca la pantalla para jugar</p>
               </div>
-              <div className="grid grid-cols-2 gap-4 mb-10 text-left max-w-sm">
-                 <div className="bg-white/5 p-3 rounded-xl border border-white/10 hover:bg-white/10 transition-colors">
-                   <p className="text-xs text-blue-300 font-bold uppercase mb-1">Standard</p>
-                   <p className="text-[10px] text-slate-400">Normal, 1 toque.</p>
-                 </div>
-                 <div className="bg-white/5 p-3 rounded-xl border border-white/10 hover:bg-white/10 transition-colors">
-                   <p className="text-xs text-amber-300 font-bold uppercase mb-1">Armored</p>
-                   <p className="text-[10px] text-slate-400">Pesada, 3 toques.</p>
-                 </div>
-                 <div className="bg-white/5 p-3 rounded-xl border border-white/10 hover:bg-white/10 transition-colors">
-                   <p className="text-xs text-sky-400 font-bold uppercase mb-1">Speedy</p>
-                   <p className="text-[10px] text-slate-400">Muy rápida, bonus pts.</p>
-                 </div>
-                 <div className="bg-white/5 p-3 rounded-xl border border-white/10 hover:bg-white/10 transition-colors">
-                   <p className="text-xs text-pink-400 font-bold uppercase mb-1">Heart</p>
-                   <p className="text-[10px] text-slate-400">Rara, +1 vida.</p>
-                 </div>
-              </div>
-              <button 
-                onClick={startGame}
-                className="group relative px-16 py-6 bg-white text-black rounded-full font-black text-2xl hover:bg-blue-500 hover:text-white transition-all hover:scale-105 active:scale-95 shadow-[0_20px_50px_rgba(255,255,255,0.2)]"
-              >
-                EMPEZAR AVENTURA
-              </button>
+
+              <Footer />
             </>
           )}
         </div>
       )}
 
+      {/* Game Over Screen */}
       {gameState.status === GameStatus.GAMEOVER && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 backdrop-blur-3xl z-50 p-8 text-center">
-          <h2 className="text-2xl font-black mb-2 text-red-500 uppercase tracking-[0.3em]">Misión Fallida</h2>
-          <div className="my-10">
-            <p className="text-slate-400 uppercase tracking-widest text-xs mb-2">Puntuación Final</p>
-            <p className="text-8xl font-black text-white drop-shadow-[0_0_30px_rgba(255,255,255,0.2)]">{gameState.score}</p>
+        <div className="absolute inset-0 z-[60] flex flex-col items-center justify-between bg-black/90 backdrop-blur-2xl p-8 text-center overflow-y-auto">
+          <div className="w-full flex flex-col items-center mt-auto mb-auto py-8">
+            <div className="mb-10">
+              <h2 className="text-red-500 text-sm font-black tracking-[0.5em] uppercase mb-4">Fin de la Partida</h2>
+              <p className="text-8xl md:text-9xl font-black text-white">{gameState.score}</p>
+              <p className="text-slate-500 text-xs mt-2">PUNTUACIÓN FINAL</p>
+            </div>
+
+            <div className="w-full max-w-sm bg-white/5 border border-white/10 p-6 rounded-[2.5rem] mb-12 relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-purple-500"></div>
+              <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest mb-3">Mensaje de Gemini</p>
+              {isLoading ? (
+                <div className="flex justify-center py-4">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce mx-1"></div>
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce mx-1 delay-75"></div>
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce mx-1 delay-150"></div>
+                </div>
+              ) : (
+                <p className="text-lg font-bold italic text-white/90">"{gameState.geminiMessage}"</p>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-4 w-full max-w-xs">
+              <button 
+                onClick={startGame}
+                className="w-full py-5 bg-blue-600 rounded-2xl font-black text-xl hover:bg-blue-500 transition-all hover:scale-105 shadow-lg"
+              >
+                REINTENTAR
+              </button>
+              <button 
+                onClick={() => setGameState(s => ({ ...s, status: GameStatus.START }))}
+                className="py-3 text-slate-500 font-bold hover:text-white uppercase text-xs tracking-widest"
+              >
+                VOLVER AL INICIO
+              </button>
+            </div>
           </div>
 
-          <div className="bg-white/5 p-8 rounded-[2rem] border border-white/10 mb-12 max-w-sm w-full relative overflow-hidden group">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-purple-500"></div>
-            <p className="text-[10px] text-blue-400 font-black uppercase mb-4 tracking-[0.2em]">Resumen de la IA</p>
-            {isLoading ? (
-              <div className="flex gap-2 justify-center py-6">
-                {[0, 1, 2].map(i => (
-                  <div key={i} className={`w-3 h-3 bg-blue-500 rounded-full animate-bounce`} style={{ animationDelay: `${i * 0.15}s` }}></div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xl font-medium leading-tight text-white/90 italic">"{gameState.geminiMessage}"</p>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-4 w-full max-w-xs">
-            <button 
-              onClick={startGame}
-              className="w-full py-5 bg-blue-600 rounded-2xl font-black text-xl hover:bg-blue-500 transition-all hover:scale-105 active:scale-95 shadow-xl"
-            >
-              INTENTAR DE NUEVO
-            </button>
-            <button 
-              onClick={() => setGameState(s => ({ ...s, status: GameStatus.START }))}
-              className="py-3 text-slate-500 font-bold hover:text-white transition-colors uppercase text-xs tracking-widest"
-            >
-              Menu Principal
-            </button>
-          </div>
+          <Footer />
         </div>
       )}
     </div>
