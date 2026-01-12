@@ -1,10 +1,14 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-
+/**
+ * getGeminiFeedback uses Gemini 3 Flash to provide motivational feedback
+ * based on the user's score and level.
+ */
 export const getGeminiFeedback = async (score: number, level: number): Promise<string> => {
   try {
+    // Initialize GoogleGenAI with the API key from environment variables
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `El jugador ha terminado una partida del juego 'Bubble Pop Master'.
@@ -17,6 +21,7 @@ export const getGeminiFeedback = async (score: number, level: number): Promise<s
         topP: 0.9,
       }
     });
+    // Access response.text property directly (not a method)
     return response.text || "¡Buen intento! Sigue explotando burbujas.";
   } catch (error) {
     console.error("Gemini Error:", error);
