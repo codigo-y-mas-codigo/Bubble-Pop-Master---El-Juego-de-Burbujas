@@ -66,6 +66,12 @@ const App: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (bgmRef.current) bgmRef.current.muted = isMuted;
+    if (popSfxRef.current) popSfxRef.current.muted = isMuted;
+    if (hitSfxRef.current) hitSfxRef.current.muted = isMuted;
+  }, [isMuted]);
+
   const generateBackground = async () => {
     setIsGeneratingBg(true);
     try {
@@ -105,6 +111,18 @@ const App: React.FC = () => {
     setBubbles([]);
     setParticles([]);
     setFloatingTexts([]);
+    lastSpawnRef.current = performance.now();
+  };
+
+  const resumeGame = () => {
+    setGameState(prev => ({ ...prev, status: GameStatus.PLAYING }));
+    lastSpawnRef.current = performance.now();
+  };
+
+  const pauseGame = () => {
+    if (gameState.status === GameStatus.PLAYING) {
+      setGameState(prev => ({ ...prev, status: GameStatus.PAUSED }));
+    }
   };
 
   const triggerShake = (intensity: number) => {
@@ -181,9 +199,12 @@ const App: React.FC = () => {
 
   const gameLoop = useCallback((time: number) => {
     if (gameState.status !== GameStatus.PLAYING) return;
+
     if (time - lastSpawnRef.current > Math.max(120, SPAWN_INTERVAL - (gameState.level * 45))) {
-      createBubble(); lastSpawnRef.current = time;
+      createBubble(); 
+      lastSpawnRef.current = time;
     }
+
     setBubbles(prev => {
       const up = prev.map(b => ({ ...b, y: b.y - b.speed }));
       const missed = up.filter(b => b.y < -b.size);
@@ -196,14 +217,17 @@ const App: React.FC = () => {
       }
       return up.filter(b => b.y >= -b.size);
     });
+
     setParticles(p => p.map(pt => ({ ...pt, x: pt.x + pt.vx, y: pt.y + pt.vy, vy: pt.vy + 0.1, life: pt.life - 0.02 })).filter(pt => pt.life > 0));
     setFloatingTexts(t => t.map(ft => ({ ...ft, y: ft.y - 1.5, life: ft.life - 0.015 })).filter(ft => ft.life > 0));
+    
     gameLoopRef.current = requestAnimationFrame(gameLoop);
   }, [gameState.status, gameState.level, createBubble]);
 
   useEffect(() => {
-    if (gameState.status === GameStatus.PLAYING) gameLoopRef.current = requestAnimationFrame(gameLoop);
-    else if (gameState.status === GameStatus.GAMEOVER) {
+    if (gameState.status === GameStatus.PLAYING) {
+      gameLoopRef.current = requestAnimationFrame(gameLoop);
+    } else if (gameState.status === GameStatus.GAMEOVER) {
       if (gameState.score > gameState.highScore) {
         localStorage.setItem('bubblePopHighScore', gameState.score.toString());
         setGameState(prev => ({ ...prev, highScore: gameState.score }));
@@ -211,6 +235,7 @@ const App: React.FC = () => {
       setIsLoading(true);
       getGeminiFeedback(gameState.score, gameState.level).then(msg => { setGameState(s => ({ ...s, geminiMessage: msg })); setIsLoading(false); });
     }
+    
     return () => { if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current); };
   }, [gameState.status, gameLoop]);
 
@@ -232,17 +257,30 @@ const App: React.FC = () => {
         <div className="absolute inset-0 bg-blue-900/10 mix-blend-overlay"></div>
       </div>
 
-      {gameState.status === GameStatus.PLAYING && (
+      {(gameState.status === GameStatus.PLAYING || gameState.status === GameStatus.PAUSED) && (
         <div className="absolute top-0 left-0 w-full p-6 flex justify-between items-start z-50 pointer-events-none">
-          <div className="bg-white/5 backdrop-blur-md p-4 rounded-3xl border border-white/10 text-center">
+          <div className="bg-white/5 backdrop-blur-md p-4 rounded-3xl border border-white/10 text-center pointer-events-auto">
             <div className="text-[10px] text-blue-400 font-bold uppercase tracking-widest">Score</div>
             <div className="text-4xl font-black">{gameState.score}</div>
           </div>
-          <div className="flex flex-col items-end gap-3">
-            <div className="flex gap-2 bg-black/40 p-2 rounded-full border border-white/10">
-              {Array.from({ length: MAX_LIVES }).map((_, i) => (
-                <div key={i} className={`w-4 h-4 rounded-full transition-all duration-300 ${i < gameState.lives ? 'bg-red-500 shadow-[0_0_10px_red]' : 'bg-white/5'}`} />
-              ))}
+
+          <div className="flex flex-col items-end gap-3 pointer-events-auto">
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={gameState.status === GameStatus.PLAYING ? pauseGame : resumeGame}
+                className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/10 hover:bg-white/20 transition-all active:scale-90"
+              >
+                {gameState.status === GameStatus.PLAYING ? (
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="2"/><rect x="14" y="4" width="4" height="16" rx="2"/></svg>
+                ) : (
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                )}
+              </button>
+              <div className="flex gap-2 bg-black/40 p-2 rounded-full border border-white/10">
+                {Array.from({ length: MAX_LIVES }).map((_, i) => (
+                  <div key={i} className={`w-4 h-4 rounded-full transition-all duration-300 ${i < gameState.lives ? 'bg-red-500 shadow-[0_0_10px_red]' : 'bg-white/5'}`} />
+                ))}
+              </div>
             </div>
             <div className="bg-blue-500 px-4 py-1 rounded-full text-[10px] font-black italic">LEVEL {gameState.level}</div>
           </div>
@@ -279,6 +317,34 @@ const App: React.FC = () => {
             <button onClick={startGame} className="px-16 py-6 bg-white text-black rounded-full font-black text-3xl hover:scale-105 active:scale-95 transition-all shadow-2xl hover:bg-blue-500 hover:text-white">JUGAR AHORA</button>
           </div>
           <Footer />
+        </div>
+      )}
+
+      {gameState.status === GameStatus.PAUSED && (
+        <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-black/40 backdrop-blur-md p-8">
+          <div className="bg-[#0f172a]/80 backdrop-blur-2xl p-10 rounded-[3rem] border border-white/10 shadow-2xl flex flex-col items-center max-w-xs w-full">
+            <h2 className="text-4xl font-black italic mb-8 tracking-tighter">PAUSA</h2>
+            <div className="flex flex-col gap-4 w-full">
+              <button 
+                onClick={resumeGame}
+                className="w-full py-5 bg-white text-black rounded-2xl font-black text-xl hover:bg-blue-500 hover:text-white transition-all shadow-lg active:scale-95"
+              >
+                REANUDAR
+              </button>
+              <button 
+                onClick={startGame}
+                className="w-full py-4 bg-white/10 border border-white/10 rounded-2xl font-bold text-lg hover:bg-white/20 transition-all active:scale-95"
+              >
+                REINICIAR
+              </button>
+              <button 
+                onClick={() => setGameState(s => ({ ...s, status: GameStatus.START }))}
+                className="w-full py-4 text-slate-400 font-bold hover:text-white transition-all uppercase text-xs tracking-widest"
+              >
+                SALIR AL MENÚ
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
