@@ -148,8 +148,11 @@ const App: React.FC = () => {
     let type = BubbleType.STANDARD, size = Math.random() * 40 + 50, health = 1, speedMult = 1, points = 100;
     let color = COLORS[Math.floor(Math.random() * COLORS.length)];
 
-    if (rand < 0.05 && gameState.lives < MAX_LIVES) {
-      type = BubbleType.HEART; color = 'rgba(244, 63, 94, 0.7)'; size = 60;
+    // Probabilidad base de 4%. Si tiene 1 vida, aumenta a 10% para ayudar al jugador.
+    const heartChance = gameState.lives === 1 ? 0.10 : 0.04;
+
+    if (rand < heartChance && gameState.lives < MAX_LIVES) {
+      type = BubbleType.HEART; color = 'rgba(244, 63, 94, 0.8)'; size = 70; points = 50;
     } else if (rand < 0.12) {
       type = BubbleType.GOLD; color = 'rgba(250, 204, 21, 0.7)'; size = 50; points = 500;
     } else if (rand < 0.25) {
@@ -179,13 +182,18 @@ const App: React.FC = () => {
 
       if (newHealth <= 0) {
         popSfxRef.current?.play().catch(() => {});
-        const pCount = b.type === BubbleType.GOLD ? 30 : 15;
+        const pCount = b.type === BubbleType.GOLD ? 30 : (b.type === BubbleType.HEART ? 25 : 15);
+        const pColor = b.type === BubbleType.HEART ? '#fda4af' : b.color;
+        
         const newParticles = Array.from({ length: pCount }).map(() => ({
-          id: Math.random(), x: cx, y: cy, vx: (Math.random() - 0.5) * 15, vy: (Math.random() - 0.5) * 15, color: b.color, life: 1.0
+          id: Math.random(), x: cx, y: cy, vx: (Math.random() - 0.5) * 15, vy: (Math.random() - 0.5) * 15, color: pColor, life: 1.0
         }));
         setParticles(p => [...p, ...newParticles]);
         triggerShake(b.type === BubbleType.ARMORED ? 8 : 2);
-        createFloatingText(cx, cy, b.type === BubbleType.HEART ? "VIDA +1" : `+${b.points}`, b.type === BubbleType.GOLD ? '#facc15' : '#fff');
+        
+        const floatingTxt = b.type === BubbleType.HEART ? "VIDA +1" : `+${b.points}`;
+        const floatingClr = b.type === BubbleType.HEART ? '#f43f5e' : (b.type === BubbleType.GOLD ? '#facc15' : '#fff');
+        createFloatingText(cx, cy, floatingTxt, floatingClr);
         
         setGameState(s => ({
           ...s, score: s.score + b.points,
@@ -239,7 +247,6 @@ const App: React.FC = () => {
         localStorage.setItem('bubblePopHighScore', gameState.score.toString());
         setGameState(prev => ({ ...prev, highScore: gameState.score }));
       }
-      // Feedback instantáneo local con pequeño retardo para efecto dramático
       setIsLoadingFeedback(true);
       setTimeout(() => {
         const msg = getLocalFeedback(gameState.score, gameState.level);
@@ -351,7 +358,7 @@ const App: React.FC = () => {
             <div className="flex items-center gap-3">
               <button 
                 onClick={gameState.status === GameStatus.PLAYING ? pauseGame : resumeGame}
-                className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/10 hover:bg-white/20 transition-all active:scale-90"
+                className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/10 hover:bg-white/20 transition-all active:scale-90 pointer-events-auto"
               >
                 {gameState.status === GameStatus.PLAYING ? (
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="2"/><rect x="14" y="4" width="4" height="16" rx="2"/></svg>
@@ -361,7 +368,7 @@ const App: React.FC = () => {
               </button>
               <div className="flex gap-2 bg-black/40 p-2 rounded-full border border-white/10">
                 {Array.from({ length: MAX_LIVES }).map((_, i) => (
-                  <div key={i} className={`w-4 h-4 rounded-full transition-all duration-300 ${i < gameState.lives ? 'bg-red-500 shadow-[0_0_10px_red]' : 'bg-white/5'}`} />
+                  <div key={i} className={`w-4 h-4 rounded-full transition-all duration-300 ${i < gameState.lives ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.7)]' : 'bg-white/5'}`} />
                 ))}
               </div>
             </div>
@@ -372,10 +379,27 @@ const App: React.FC = () => {
 
       <div className="relative w-full h-full z-10">
         {bubbles.map(b => (
-          <div key={b.id} onPointerDown={() => handlePop(b.id)} className={`absolute rounded-full cursor-pointer transition-transform active:scale-125`} style={{ left: b.x, top: b.y, width: b.size, height: b.size, background: b.type === BubbleType.GOLD ? 'radial-gradient(circle at 30% 30%, #fff, #facc15 60%, #a16207)' : `radial-gradient(circle at 30% 30%, rgba(255,255,255,0.4), ${b.color} 70%)`, boxShadow: b.type === BubbleType.GOLD ? '0 0 25px rgba(250,204,21,0.5)' : 'inset 0 0 10px rgba(255,255,255,0.3)', border: b.type === BubbleType.ARMORED ? '3px solid rgba(255,255,255,0.5)' : '1px solid rgba(255,255,255,0.2)' }}>
+          <div 
+            key={b.id} 
+            onPointerDown={() => handlePop(b.id)} 
+            className={`absolute rounded-full cursor-pointer transition-transform active:scale-125 ${b.type === BubbleType.HEART ? 'animate-pulse-heart' : ''}`} 
+            style={{ 
+              left: b.x, 
+              top: b.y, 
+              width: b.size, 
+              height: b.size, 
+              background: b.type === BubbleType.GOLD ? 'radial-gradient(circle at 30% 30%, #fff, #facc15 60%, #a16207)' : 
+                         b.type === BubbleType.HEART ? 'radial-gradient(circle at 30% 30%, #fff, #f43f5e 60%, #9f1239)' : 
+                         `radial-gradient(circle at 30% 30%, rgba(255,255,255,0.4), ${b.color} 70%)`, 
+              boxShadow: b.type === BubbleType.GOLD ? '0 0 25px rgba(250,204,21,0.5)' : 
+                        b.type === BubbleType.HEART ? '0 0 20px rgba(244,63,94,0.4)' : 
+                        'inset 0 0 10px rgba(255,255,255,0.3)', 
+              border: b.type === BubbleType.ARMORED ? '3px solid rgba(255,255,255,0.5)' : '1px solid rgba(255,255,255,0.2)' 
+            }}
+          >
             <div className="absolute top-[15%] left-[15%] w-[20%] h-[20%] bg-white/40 rounded-full blur-[1px]"></div>
             {b.type === BubbleType.ARMORED && b.health > 1 && <div className="absolute inset-0 flex items-center justify-center font-black text-white/40">{b.health}</div>}
-            {b.type === BubbleType.HEART && <div className="absolute inset-0 flex items-center justify-center text-xl">❤️</div>}
+            {b.type === BubbleType.HEART && <div className="absolute inset-0 flex items-center justify-center text-2xl drop-shadow-lg">❤️</div>}
           </div>
         ))}
         {particles.map(p => <div key={p.id} className="absolute rounded-full pointer-events-none" style={{ left: p.x, top: p.y, width: 8*p.life, height: 8*p.life, background: p.color, opacity: p.life }} />)}
@@ -390,7 +414,7 @@ const App: React.FC = () => {
               {gameState.highScore > 0 ? `HIGH SCORE: ${gameState.highScore}` : 'READY TO POP?'}
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full mb-12">
-              {[{t:'Standard', d:'1 Tap'}, {t:'Armored', d:'3 Taps'}, {t:'Speedy', d:'Fast'}, {t:'Heart', d:'+1 Life'}].map((x,i) => (
+              {[{t:'Standard', d:'1 Tap'}, {t:'Armored', d:'3 Taps'}, {t:'Speedy', d:'Fast'}, {t:'Heart', d:'+1 Vida'}].map((x,i) => (
                 <div key={i} className="bg-white/5 border border-white/10 p-4 rounded-2xl text-center">
                   <div className="text-blue-400 text-[10px] font-black uppercase mb-1">{x.t}</div>
                   <div className="text-slate-400 text-[10px]">{x.d}</div>
