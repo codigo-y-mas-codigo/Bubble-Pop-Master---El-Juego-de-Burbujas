@@ -53,13 +53,21 @@ const App: React.FC = () => {
       setGameState(prev => ({ ...prev, highScore: parseInt(savedScore) }));
     }
 
+    const savedMute = localStorage.getItem('bubblePopMuted') === 'true';
+    setIsMuted(savedMute);
+
     bgmRef.current = new Audio(BGM_URL);
     bgmRef.current.loop = true;
     bgmRef.current.volume = 0.3;
+    bgmRef.current.muted = savedMute;
+
     popSfxRef.current = new Audio(POP_SFX_URL);
     popSfxRef.current.volume = 0.5;
+    popSfxRef.current.muted = savedMute;
+
     hitSfxRef.current = new Audio(HIT_SFX_URL);
     hitSfxRef.current.volume = 0.4;
+    hitSfxRef.current.muted = savedMute;
 
     return () => {
       if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
@@ -67,17 +75,23 @@ const App: React.FC = () => {
     };
   }, []);
 
+  // Sync mute state with audio elements
   useEffect(() => {
     if (bgmRef.current) bgmRef.current.muted = isMuted;
     if (popSfxRef.current) popSfxRef.current.muted = isMuted;
     if (hitSfxRef.current) hitSfxRef.current.muted = isMuted;
+    localStorage.setItem('bubblePopMuted', String(isMuted));
   }, [isMuted]);
 
+  const toggleMute = () => setIsMuted(prev => !prev);
+
   const generateBackground = async () => {
-    if (!process.env.API_KEY) return;
+    const apiKey = typeof process !== 'undefined' ? process.env?.API_KEY : undefined;
+    if (!apiKey) return;
+
     setIsGeneratingBg(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: {
@@ -91,7 +105,7 @@ const App: React.FC = () => {
         setGameState(prev => ({ ...prev, backgroundUrl: `data:image/png;base64,${part.inlineData.data}` }));
       }
     } catch (error) {
-      console.error("Background Gen Error:", error);
+      console.warn("Background generation skipped or failed.");
     } finally {
       setIsGeneratingBg(false);
     }
@@ -121,6 +135,21 @@ const App: React.FC = () => {
     lastSpawnRef.current = performance.now();
   };
 
+  const resetToMenu = () => {
+    if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current);
+    setGameState(prev => ({
+      ...prev,
+      score: 0,
+      lives: INITIAL_LIVES,
+      level: 1,
+      status: GameStatus.START,
+      geminiMessage: ''
+    }));
+    setBubbles([]);
+    setParticles([]);
+    setFloatingTexts([]);
+  };
+
   const resumeGame = () => {
     setGameState(prev => ({ ...prev, status: GameStatus.PLAYING }));
     lastSpawnRef.current = performance.now();
@@ -148,7 +177,6 @@ const App: React.FC = () => {
     let type = BubbleType.STANDARD, size = Math.random() * 40 + 50, health = 1, speedMult = 1, points = 100;
     let color = COLORS[Math.floor(Math.random() * COLORS.length)];
 
-    // Probabilidad base de 4%. Si tiene 1 vida, aumenta a 10% para ayudar al jugador.
     const heartChance = gameState.lives === 1 ? 0.10 : 0.04;
 
     if (rand < heartChance && gameState.lives < MAX_LIVES) {
@@ -347,6 +375,21 @@ const App: React.FC = () => {
         <div className="absolute inset-0 bg-blue-900/10 mix-blend-overlay"></div>
       </div>
 
+      <div className="absolute top-0 right-0 p-4 z-[60] flex gap-2">
+        <button 
+          onClick={toggleMute}
+          aria-label={isMuted ? "Activar sonido" : "Silenciar sonido"}
+          title={isMuted ? "Activar sonido" : "Silenciar"}
+          className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/10 hover:bg-white/20 transition-all active:scale-90 shadow-lg"
+        >
+          {isMuted ? (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"></path><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+          ) : (
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+          )}
+        </button>
+      </div>
+
       {(gameState.status === GameStatus.PLAYING || gameState.status === GameStatus.PAUSED) && (
         <div className="absolute top-0 left-0 w-full p-6 flex justify-between items-start z-50 pointer-events-none">
           <div className="bg-white/5 backdrop-blur-md p-4 rounded-3xl border border-white/10 text-center pointer-events-auto">
@@ -354,25 +397,46 @@ const App: React.FC = () => {
             <div className="text-4xl font-black">{gameState.score}</div>
           </div>
 
-          <div className="flex flex-col items-end gap-3 pointer-events-auto">
+          <div className="flex flex-col items-end gap-3 pointer-events-auto mr-12 md:mr-0">
             <div className="flex items-center gap-3">
               <button 
                 onClick={gameState.status === GameStatus.PLAYING ? pauseGame : resumeGame}
-                className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/10 hover:bg-white/20 transition-all active:scale-90 pointer-events-auto"
+                aria-label={gameState.status === GameStatus.PLAYING ? "Pausar juego" : "Reanudar juego"}
+                title={gameState.status === GameStatus.PLAYING ? "Pausa" : "Reanudar"}
+                className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/10 hover:bg-white/20 transition-all active:scale-90 pointer-events-auto shadow-lg"
               >
                 {gameState.status === GameStatus.PLAYING ? (
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="2"/><rect x="14" y="4" width="4" height="16" rx="2"/></svg>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
                 ) : (
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                 )}
               </button>
-              <div className="flex gap-2 bg-black/40 p-2 rounded-full border border-white/10">
+              
+              <button 
+                onClick={startGame}
+                aria-label="Reiniciar partida"
+                title="Reiniciar"
+                className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/10 hover:bg-white/20 transition-all active:scale-90 pointer-events-auto shadow-lg"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+              </button>
+
+              <button 
+                onClick={resetToMenu}
+                aria-label="Restablecer todo al estado inicial"
+                title="Restablecer"
+                className="bg-red-500/10 backdrop-blur-md p-3 rounded-2xl border border-red-500/20 hover:bg-red-500/30 transition-all active:scale-90 pointer-events-auto shadow-lg group"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-red-400 group-hover:text-red-300"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
+              </button>
+
+              <div className="flex gap-2 bg-black/40 p-2 rounded-full border border-white/10 shadow-inner">
                 {Array.from({ length: MAX_LIVES }).map((_, i) => (
                   <div key={i} className={`w-4 h-4 rounded-full transition-all duration-300 ${i < gameState.lives ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.7)]' : 'bg-white/5'}`} />
                 ))}
               </div>
             </div>
-            <div className="bg-blue-500 px-4 py-1 rounded-full text-[10px] font-black italic">LEVEL {gameState.level}</div>
+            <div className="bg-blue-500 px-4 py-1 rounded-full text-[10px] font-black italic shadow-lg">LEVEL {gameState.level}</div>
           </div>
         </div>
       )}
@@ -421,7 +485,13 @@ const App: React.FC = () => {
                 </div>
               ))}
             </div>
-            <button onClick={startTutorial} className="px-16 py-6 bg-white text-black rounded-full font-black text-3xl hover:scale-105 active:scale-95 transition-all shadow-2xl hover:bg-blue-500 hover:text-white">JUGAR AHORA</button>
+            <button 
+              onClick={startTutorial} 
+              aria-label="Comenzar juego"
+              className="px-16 py-6 bg-white text-black rounded-full font-black text-3xl hover:scale-105 active:scale-95 transition-all shadow-2xl hover:bg-blue-500 hover:text-white"
+            >
+              JUGAR AHORA
+            </button>
           </div>
           <Footer />
         </div>
@@ -436,18 +506,31 @@ const App: React.FC = () => {
             <div className="flex flex-col gap-4 w-full">
               <button 
                 onClick={resumeGame}
-                className="w-full py-5 bg-white text-black rounded-2xl font-black text-xl hover:bg-blue-500 hover:text-white transition-all shadow-lg active:scale-95"
+                aria-label="Reanudar el juego"
+                className="w-full py-5 bg-white text-black rounded-2xl font-black text-xl hover:bg-blue-500 hover:text-white transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
               >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                 REANUDAR
               </button>
               <button 
                 onClick={startGame}
-                className="w-full py-4 bg-white/10 border border-white/10 rounded-2xl font-bold text-lg hover:bg-white/20 transition-all active:scale-95"
+                aria-label="Reiniciar la partida actual"
+                className="w-full py-4 bg-white/10 border border-white/10 rounded-2xl font-bold text-lg hover:bg-white/20 transition-all active:scale-95 flex items-center justify-center gap-2"
               >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
                 REINICIAR
               </button>
               <button 
+                onClick={resetToMenu}
+                aria-label="Restablecer el juego por completo"
+                className="w-full py-4 bg-red-600/20 border border-red-500/30 text-red-400 rounded-2xl font-black text-lg hover:bg-red-500 hover:text-white transition-all active:scale-95 flex items-center justify-center gap-2"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
+                RESET TOTAL
+              </button>
+              <button 
                 onClick={() => setGameState(s => ({ ...s, status: GameStatus.START }))}
+                aria-label="Volver al menú principal"
                 className="w-full py-4 text-slate-400 font-bold hover:text-white transition-all uppercase text-xs tracking-widest"
               >
                 SALIR AL MENÚ
@@ -465,10 +548,23 @@ const App: React.FC = () => {
             <div className="text-slate-500 text-xs uppercase tracking-widest mb-10">Puntuación Final</div>
             <div className="w-full max-w-sm bg-white/5 p-6 rounded-[2rem] border border-white/10 mb-10 text-center relative overflow-hidden">
               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-purple-500"></div>
-              {isLoadingFeedback ? <div className="animate-pulse py-4 font-bold text-blue-300">ANALIZANDO TU PARTIDA...</div> : <p className="text-xl font-bold italic">"{gameState.geminiMessage}"</p>}
+              {isLoadingFeedback ? <div className="animate-pulse py-4 font-bold text-blue-300 uppercase tracking-tighter">Analizando...</div> : <p className="text-xl font-bold italic">"{gameState.geminiMessage}"</p>}
             </div>
             <div className="flex flex-col gap-4 w-full max-w-xs">
-              <button onClick={startGame} className="w-full py-5 bg-blue-600 rounded-2xl font-black text-xl hover:bg-blue-500 transition-all shadow-xl">REINTENTAR</button>
+              <button 
+                onClick={startGame} 
+                aria-label="Jugar de nuevo"
+                className="w-full py-5 bg-blue-600 rounded-2xl font-black text-xl hover:bg-blue-500 transition-all shadow-xl flex items-center justify-center gap-2"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                REINTENTAR
+              </button>
+              <button 
+                onClick={resetToMenu} 
+                className="py-2 text-red-500 hover:text-red-400 uppercase text-xs tracking-widest font-bold"
+              >
+                Restablecer Todo
+              </button>
               <button onClick={() => setGameState(s => ({ ...s, status: GameStatus.START }))} className="py-2 text-slate-500 hover:text-white uppercase text-xs tracking-widest font-bold">Menú Principal</button>
             </div>
           </div>
