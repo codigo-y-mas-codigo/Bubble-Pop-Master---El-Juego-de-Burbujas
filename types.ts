@@ -42,6 +42,7 @@ export interface FloatingText {
 
 export enum GameStatus {
   START = 'START',
+  TUTORIAL = 'TUTORIAL',
   PLAYING = 'PLAYING',
   PAUSED = 'PAUSED',
   GAMEOVER = 'GAMEOVER'

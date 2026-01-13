@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { BubbleData, GameStatus, GameState, Particle, BubbleType, FloatingText } from './types';
-import { getGeminiFeedback } from './services/geminiService';
+import { getLocalFeedback } from './services/feedbackService';
 import { GoogleGenAI } from "@google/genai";
 
 const COLORS = [
@@ -35,9 +35,10 @@ const App: React.FC = () => {
   const [particles, setParticles] = useState<Particle[]>([]);
   const [floatingTexts, setFloatingTexts] = useState<FloatingText[]>([]);
   const [shakeIntensity, setShakeIntensity] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingFeedback, setIsLoadingFeedback] = useState(false);
   const [isGeneratingBg, setIsGeneratingBg] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [tutorialStep, setTutorialStep] = useState(0);
   
   const gameLoopRef = useRef<number | null>(null);
   const lastSpawnRef = useRef<number>(0);
@@ -73,6 +74,7 @@ const App: React.FC = () => {
   }, [isMuted]);
 
   const generateBackground = async () => {
+    if (!process.env.API_KEY) return;
     setIsGeneratingBg(true);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -93,6 +95,11 @@ const App: React.FC = () => {
     } finally {
       setIsGeneratingBg(false);
     }
+  };
+
+  const startTutorial = () => {
+    setTutorialStep(0);
+    setGameState(prev => ({ ...prev, status: GameStatus.TUTORIAL }));
   };
 
   const startGame = () => {
@@ -232,8 +239,13 @@ const App: React.FC = () => {
         localStorage.setItem('bubblePopHighScore', gameState.score.toString());
         setGameState(prev => ({ ...prev, highScore: gameState.score }));
       }
-      setIsLoading(true);
-      getGeminiFeedback(gameState.score, gameState.level).then(msg => { setGameState(s => ({ ...s, geminiMessage: msg })); setIsLoading(false); });
+      // Feedback instantáneo local con pequeño retardo para efecto dramático
+      setIsLoadingFeedback(true);
+      setTimeout(() => {
+        const msg = getLocalFeedback(gameState.score, gameState.level);
+        setGameState(s => ({ ...s, geminiMessage: msg }));
+        setIsLoadingFeedback(false);
+      }, 800);
     }
     
     return () => { if (gameLoopRef.current) cancelAnimationFrame(gameLoopRef.current); };
@@ -247,6 +259,77 @@ const App: React.FC = () => {
       </div>
     </footer>
   );
+
+  const TutorialOverlay = () => {
+    const steps = [
+      {
+        title: "¡Bienvenido a Bubble Master!",
+        content: "El objetivo es simple: explota todas las burbujas antes de que lleguen a la superficie.",
+        type: BubbleType.STANDARD,
+        color: COLORS[0],
+        icon: "👆"
+      },
+      {
+        title: "Burbujas Especiales",
+        content: "Algunas burbujas son más resistentes o rápidas. La burbuja dorada da puntos extra, ¡no la dejes ir!",
+        type: BubbleType.GOLD,
+        color: "rgba(250, 204, 21, 0.7)",
+        icon: "✨"
+      },
+      {
+        title: "Vidas y Salud",
+        content: "Pierdes una vida por cada burbuja estándar que se escape. ¡Busca los corazones para recuperarte!",
+        type: BubbleType.HEART,
+        color: "rgba(244, 63, 94, 0.7)",
+        icon: "❤️"
+      },
+      {
+        title: "¿Listo para empezar?",
+        content: "A medida que subas de nivel, las burbujas aparecerán más rápido. ¡Buena suerte!",
+        type: BubbleType.ARMORED,
+        color: "rgba(100, 116, 139, 0.8)",
+        icon: "🚀"
+      }
+    ];
+
+    const current = steps[tutorialStep];
+
+    return (
+      <div className="absolute inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-xl p-6">
+        <div className="bg-[#1e293b]/80 border border-white/10 rounded-[3rem] p-8 md:p-12 max-w-lg w-full shadow-2xl flex flex-col items-center text-center animate-fade-in">
+          <div className="w-24 h-24 rounded-full mb-6 flex items-center justify-center text-4xl bg-white/5 border border-white/10 shadow-inner relative overflow-hidden">
+             <div className="absolute inset-0 opacity-40 animate-pulse" style={{ 
+               background: current.type === BubbleType.GOLD ? 'radial-gradient(circle, #facc15, transparent)' : `radial-gradient(circle, ${current.color}, transparent)` 
+             }}></div>
+             <span className="relative z-10">{current.icon}</span>
+          </div>
+          
+          <h2 className="text-3xl font-black italic mb-4 text-blue-400 uppercase tracking-tight">{current.title}</h2>
+          <p className="text-slate-300 text-lg leading-relaxed mb-10">{current.content}</p>
+          
+          <div className="flex gap-2 mb-8">
+            {steps.map((_, i) => (
+              <div key={i} className={`w-2 h-2 rounded-full transition-all duration-300 ${i === tutorialStep ? 'bg-blue-500 w-6' : 'bg-white/20'}`}></div>
+            ))}
+          </div>
+
+          <button 
+            onClick={() => {
+              if (tutorialStep < steps.length - 1) {
+                setTutorialStep(tutorialStep + 1);
+              } else {
+                startGame();
+              }
+            }}
+            className="w-full py-5 bg-white text-black rounded-2xl font-black text-xl hover:bg-blue-500 hover:text-white transition-all shadow-xl active:scale-95 flex items-center justify-center gap-2"
+          >
+            {tutorialStep < steps.length - 1 ? 'CONTINUAR' : '¡A JUGAR!'}
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div ref={containerRef} className="relative w-full h-screen overflow-hidden bg-[#050510] text-white touch-none" style={{ transform: shakeIntensity > 0 ? `translate(${(Math.random()-0.5)*shakeIntensity}px, ${(Math.random()-0.5)*shakeIntensity}px)` : 'none' }}>
@@ -314,11 +397,13 @@ const App: React.FC = () => {
                 </div>
               ))}
             </div>
-            <button onClick={startGame} className="px-16 py-6 bg-white text-black rounded-full font-black text-3xl hover:scale-105 active:scale-95 transition-all shadow-2xl hover:bg-blue-500 hover:text-white">JUGAR AHORA</button>
+            <button onClick={startTutorial} className="px-16 py-6 bg-white text-black rounded-full font-black text-3xl hover:scale-105 active:scale-95 transition-all shadow-2xl hover:bg-blue-500 hover:text-white">JUGAR AHORA</button>
           </div>
           <Footer />
         </div>
       )}
+
+      {gameState.status === GameStatus.TUTORIAL && <TutorialOverlay />}
 
       {gameState.status === GameStatus.PAUSED && (
         <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-black/40 backdrop-blur-md p-8">
@@ -356,7 +441,7 @@ const App: React.FC = () => {
             <div className="text-slate-500 text-xs uppercase tracking-widest mb-10">Puntuación Final</div>
             <div className="w-full max-w-sm bg-white/5 p-6 rounded-[2rem] border border-white/10 mb-10 text-center relative overflow-hidden">
               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-purple-500"></div>
-              {isLoading ? <div className="animate-pulse py-4 font-bold text-blue-300">CALCULANDO TU GRANDEZA...</div> : <p className="text-xl font-bold italic">"{gameState.geminiMessage}"</p>}
+              {isLoadingFeedback ? <div className="animate-pulse py-4 font-bold text-blue-300">ANALIZANDO TU PARTIDA...</div> : <p className="text-xl font-bold italic">"{gameState.geminiMessage}"</p>}
             </div>
             <div className="flex flex-col gap-4 w-full max-w-xs">
               <button onClick={startGame} className="w-full py-5 bg-blue-600 rounded-2xl font-black text-xl hover:bg-blue-500 transition-all shadow-xl">REINTENTAR</button>
